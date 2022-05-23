@@ -7,6 +7,7 @@ from tqdm import tqdm
 import torch
 from torch import nn
 import torch.nn.functional as F
+import wandb
 
 
 class Block(nn.Module):
@@ -88,6 +89,14 @@ def division_mod_p_data(p, eq_token, op_token):
 def main(args):
     torch.manual_seed(0)
 
+    wandb.init(
+        project="grok",
+        config=args,
+        settings=wandb.Settings(start_method="thread"),
+        tags=[f"p_{args.p}", f"budget_{args.budget}", f"batch_size_{args.batch_size}", f"lr_{args.lr}", f"beta1_{args.beta1}", f"beta2_{args.beta2}", f"weight_decay_{args.weight_decay}", f"optimizer_{args.optimizer}"],
+
+    )
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # tokens for <op> and <=>. It's not clear why <=> is needed at all since it
@@ -133,7 +142,7 @@ def main(args):
         # randomly shuffle train data
         train_data = train_data[:, torch.randperm(train_data.shape[1])]
 
-        for data, is_train in [(train_data, True), (valid_data, False)]:
+        for data, is_train in [(valid_data, False), (train_data, True)]:
 
             model.train(is_train)
             total_loss = 0
@@ -160,9 +169,19 @@ def main(args):
                 total_acc += acc.item() * input.shape[-1]
 
             if is_train:
+                wandb.log({
+                    "train_loss": total_loss / train_data.shape[-1],
+                    "train_acc": total_acc / train_data.shape[-1],
+                    "epoch": e,
+                })
                 train_acc.append(total_acc / train_data.shape[-1])
                 train_loss.append(total_loss / train_data.shape[-1])
             else:
+                wandb.log({
+                    "val_loss": total_loss / valid_data.shape[-1],
+                    "val_acc": total_acc / valid_data.shape[-1],
+                    "epoch": e,
+                })
                 val_acc.append(total_acc / valid_data.shape[-1])
                 val_loss.append(total_loss / valid_data.shape[-1])
 

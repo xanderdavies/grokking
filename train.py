@@ -142,7 +142,7 @@ def main(args):
         # randomly shuffle train data
         train_data = train_data[:, torch.randperm(train_data.shape[1])]
 
-        for data, is_train in [(valid_data, False), (train_data, True)]:
+        for data, is_train in [(train_data, True), (valid_data, False)]:
 
             model.train(is_train)
             total_loss = 0
@@ -170,17 +170,19 @@ def main(args):
 
             if is_train:
                 wandb.log({
-                    "train_loss": total_loss / train_data.shape[-1],
-                    "train_acc": total_acc / train_data.shape[-1],
+                    "Loss/train": total_loss / train_data.shape[-1],
+                    "Acc/train": total_acc / train_data.shape[-1],
                     "epoch": e,
+                    "opt_steps": e * steps_per_epoch,
                 })
                 train_acc.append(total_acc / train_data.shape[-1])
                 train_loss.append(total_loss / train_data.shape[-1])
             else:
                 wandb.log({
-                    "val_loss": total_loss / valid_data.shape[-1],
-                    "val_acc": total_acc / valid_data.shape[-1],
+                    "Loss/val": total_loss / valid_data.shape[-1],
+                    "Acc/val": total_acc / valid_data.shape[-1],
                     "epoch": e,
+                    "opt_steps": e * steps_per_epoch,
                 })
                 val_acc.append(total_acc / valid_data.shape[-1])
                 val_loss.append(total_loss / valid_data.shape[-1])

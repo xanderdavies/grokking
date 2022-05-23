@@ -2,3 +2,4 @@ wandb
 figures
 .gitignore
 __pycache__
+.vscode

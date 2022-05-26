@@ -45,16 +45,16 @@ class Decoder(nn.Module):
     Causal Transformer decoder
     """
 
-    def __init__(self, dim=128, num_layers=2, num_heads=4, num_tokens=97, seq_len=5):
+    def __init__(self, dim_div_4=128, num_layers=2, num_heads=4, num_tokens=97, seq_len=5):
         super().__init__()
-        self.token_embeddings = nn.Embedding(num_tokens, dim)
-        self.position_embeddings = nn.Embedding(seq_len, dim)
+        self.token_embeddings = nn.Embedding(num_tokens, dim_div_4)
+        self.position_embeddings = nn.Embedding(seq_len, dim_div_4)
         self.layers = nn.ModuleList()
         for _ in range(num_layers):
-            self.layers.append(Block(dim, num_heads))
+            self.layers.append(Block(dim_div_4, num_heads))
 
-        self.ln_f = nn.LayerNorm(dim)
-        self.head = nn.Linear(dim, num_tokens, bias=False)
+        self.ln_f = nn.LayerNorm(dim_div_4)
+        self.head = nn.Linear(dim_div_4, num_tokens, bias=False)
 
     def forward(self, x):
         h = self.token_embeddings(x)
@@ -70,7 +70,7 @@ class Decoder(nn.Module):
 
 def division_mod_p_data(p, eq_token, op_token):
     """
-    x◦y = x/y (mod p) for 0 ≤ x < p, 0 < y < p
+    x \compose y = x / y (mod p) for 0 \leq x < p, 0 < y < p
     """
     x = torch.arange(p)
     y = torch.arange(1, p)
@@ -81,7 +81,7 @@ def division_mod_p_data(p, eq_token, op_token):
     result = x * y % p
 
     # "All of our experiments used a small transformer trained on datasets of
-    # equations of the form a◦b = c, where each of “a”, “◦”, “b”, “=”, and “c”
+    # equations of the form a /compose b = c, where each of "a", "/compose", "b", "=" and "c"
     # is a seperate token"
     return torch.stack([x, op, y, eq, result])
 
@@ -93,8 +93,19 @@ def main(args):
         project="grok",
         config=args,
         settings=wandb.Settings(start_method="thread"),
-        tags=[f"p_{args.p}", f"budget_{args.budget}", f"batch_size_{args.batch_size}", f"lr_{args.lr}", f"beta1_{args.beta1}", f"beta2_{args.beta2}", f"weight_decay_{args.weight_decay}", f"optimizer_{args.optimizer}"],
-
+        tags=[
+            f"p_{args.p}", 
+            f"budget_{args.budget}", 
+            f"batch_size_{args.batch_size}", 
+            f"lr_{args.lr}", 
+            f"beta1_{args.beta1}", 
+            f"beta2_{args.beta2}", 
+            f"weight_decay_{args.weight_decay}", 
+            f"optimizer_{args.optimizer}",
+            f"num_layers_{args.num_layers}",
+            f"num_heads_{args.num_heads}",
+            f"dim_{args.dim_div_4*4}",
+        ],
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -110,7 +121,7 @@ def main(args):
     # the answer part of the equation. For all experiments we used a
     # transformer with 2 layers, width 128, and 4 attention heads"
     model = Decoder(
-        dim=128, num_layers=2, num_heads=4, num_tokens=args.p + 2, seq_len=5
+        dim_div_4=args.dim_div_4*4, num_layers=args.num_layers, num_heads=args.num_heads, num_tokens=args.p + 2, seq_len=5
     ).to(device)
 
     # "We train on the binary operation of division mod 97 with 50% of the data
@@ -178,12 +189,20 @@ def main(args):
                 train_acc.append(total_acc / train_data.shape[-1])
                 train_loss.append(total_loss / train_data.shape[-1])
             else:
+                vacc = total_acc / valid_data.shape[-1]
                 wandb.log({
                     "Loss/val": total_loss / valid_data.shape[-1],
-                    "Acc/val": total_acc / valid_data.shape[-1],
+                    "Acc/val": vacc,
                     "epoch": e,
                     "opt_steps": e * steps_per_epoch,
                 })
+                # if first time exceeding 0.9 val acc, log epoch number and opt step number
+                if vacc > 0.9 and max(val_acc) < 0.9:
+                    wandb.log({
+                        ">90% val epoch": e,
+                        ">90% val opt_steps": e * steps_per_epoch,
+                    })
+                       
                 val_acc.append(total_acc / valid_data.shape[-1])
                 val_loss.append(total_loss / valid_data.shape[-1])
 
@@ -220,5 +239,11 @@ if __name__ == "__main__":
     parser.add_argument("--beta2", type=float, default=0.98)
     parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--optimizer", default="Adam")
+    # number of params
+    # parser.add_argument("--dim", type=int, default=128)
+    parser.add_argument("--num-layers", type=int, default=2)
+    parser.add_argument("--num-heads", type=int, default=4)
+    parser.add_argument("--dim-div-4", type=int, default=32)
+
     args = parser.parse_args()
     main(args)
